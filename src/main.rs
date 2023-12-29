@@ -2,6 +2,8 @@ use std::thread;
 use std::time::Duration;
 use std::error::Error;
 use clap::Parser;
+use alloc_track::{AllocTrack, BacktraceMode};
+use std::alloc::System;
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -20,11 +22,22 @@ struct Cli {
     max_memory: u8,
 }
 
+#[global_allocator]
+static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short);
+
 #[cfg(target_os = "macos")]
 use mac::{check_memory_usage as check_memory_usage, find_processes as find_processes};
 
 #[cfg(target_os = "linux")]
 use linux::{check_memory_usage as check_memory_usage, find_processes as find_processes};
+
+pub const PID_COUNT_MAX: usize = 100000;
+
+pub const PATH_MAX: usize = 4096;
+// global array to store temp pids
+pub static mut PID_BUFFER: [i32; PID_COUNT_MAX] = [0i32; PID_COUNT_MAX];
+// global array to store temp paths
+pub static mut PATH_BUFFER: [u8; PATH_MAX] = [0u8; PATH_MAX];
 
 fn monitor_processes(starting_with: &str, memory_threshold: u64) -> Result<(), Box<dyn Error>> {
     let mut pids: [i32; 100000] = [0; 100000];
@@ -50,6 +63,9 @@ fn monitor_processes(starting_with: &str, memory_threshold: u64) -> Result<(), B
             println!("  Got past there");
         }
         thread::sleep(Duration::from_secs(2));
+
+        let report = alloc_track::backtrace_report(|_, _| true);
+            println!("BACKTRACES\n{report}");
     }
 }
 
