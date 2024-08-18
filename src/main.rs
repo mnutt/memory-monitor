@@ -1,9 +1,10 @@
+use clap::Parser;
+use std::error::Error;
 use std::thread;
 use std::time::Duration;
-use std::error::Error;
-use clap::Parser;
-use alloc_track::{AllocTrack, BacktraceMode};
-use std::alloc::System;
+use logging::Logger;
+
+mod logging;
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -19,53 +20,73 @@ struct Cli {
 
     /// Max memory, in MB
     #[arg(short, long)]
-    max_memory: u8,
+    max_memory: u16,
+
+    // Polling interval, in seconds
+    #[arg(short, long, default_value = "2")]
+    interval: u16,
+
+    /// Signal to send to the process when memory threshold is exceeded
+    #[arg(short, long, default_value = "SIGTERM")]
+    signal: String,
 }
 
-#[global_allocator]
-static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short);
-
 #[cfg(target_os = "macos")]
-use mac::{check_memory_usage as check_memory_usage, find_processes as find_processes};
+use mac::{MemoryChecker, ProcDir};
 
 #[cfg(target_os = "linux")]
-use linux::{check_memory_usage as check_memory_usage, find_processes as find_processes};
+use linux::{MemoryChecker, ProcDir};
 
 pub const PID_COUNT_MAX: usize = 100000;
 
-pub const PATH_MAX: usize = 4096;
-// global array to store temp pids
-pub static mut PID_BUFFER: [i32; PID_COUNT_MAX] = [0i32; PID_COUNT_MAX];
-// global array to store temp paths
-pub static mut PATH_BUFFER: [u8; PATH_MAX] = [0u8; PATH_MAX];
+fn signal_from_string(signal: &str) -> Option<i32> {
+    match signal {
+        "SIGUSR1" => Some(libc::SIGUSR1),
+        "SIGUSR2" => Some(libc::SIGUSR2),
+        "SIGTERM" => Some(libc::SIGTERM),
+        "SIGKILL" => Some(libc::SIGKILL),
+        _ => None,
+    }
+}
 
-fn monitor_processes(starting_with: &str, memory_threshold: u64) -> Result<(), Box<dyn Error>> {
-    let mut pids: [i32; 100000] = [0; 100000];
+fn monitor_processes(starting_with: &str, memory_threshold: u64, interval: u16, signal: &str) -> Result<(), Box<dyn Error>> {
+    let mut pids: Vec<i32> = Vec::with_capacity(PID_COUNT_MAX);
+
+    let mut proc_dir = ProcDir::open()?;
+    let mut checker = MemoryChecker::new();
+    let sleep_duration = Duration::from_secs(interval as u64);
+    let signal = signal_from_string(signal).unwrap_or(libc::SIGTERM);
+
     loop {
-        println!("Checking for processes");
-        // Reset the pids array
-        for pid in pids.iter_mut() {
-            *pid = 0;
-        }
-        if let Err(err) = find_processes(&starting_with, &mut pids) {
-            eprintln!("Error finding processes: {}", err);
+        Logger::log("INFO", "Checking processes", serde_json::json!({
+            "starting_with": starting_with,
+        }));
+
+        if let Err(err) = proc_dir.find_processes(&mut pids, &starting_with) {
+            Logger::log("ERROR", "Error finding processes", serde_json::json!({
+                "error": err.to_string(),
+            }));
         }
 
         for &pid in pids.iter().filter(|&&pid| pid > 0) {
-            println!("Checking memory usage for pid {}", pid);
-            let usage = check_memory_usage(pid)?;
-            if usage > memory_threshold {
-                println!("  Memory usage for pid {} is {} MB, which is over the threshold of {} MB", pid, bytes_to_megabytes(usage), bytes_to_megabytes(memory_threshold));
-                unsafe { libc::kill(pid as libc::pid_t, libc::SIGUSR1) };
-            } else {
-                println!("  Memory usage for pid {} is {} MB, which is under the threshold of {} MB", pid, bytes_to_megabytes(usage), bytes_to_megabytes(memory_threshold));
-            }
-            println!("  Got past there");
-        }
-        thread::sleep(Duration::from_secs(2));
+            let usage = checker.get_memory(pid)?;
+            Logger::log("INFO", "Memory usage", serde_json::json!({
+                "pid": pid,
+                "usage_mb": bytes_to_megabytes(usage),
+                "threshold_mb": bytes_to_megabytes(memory_threshold),
+            }));
 
-        let report = alloc_track::backtrace_report(|_, _| true);
-            println!("BACKTRACES\n{report}");
+            if usage > memory_threshold {
+                Logger::log("WARN", "Memory usage exeeded threshold, killing", serde_json::json!({
+                    "pid": pid,
+                    "usage_mb": bytes_to_megabytes(usage),
+                    "threshold_mb": bytes_to_megabytes(memory_threshold),
+                    "signal": signal,
+                }));
+                unsafe { libc::kill(pid as libc::pid_t, signal) };
+            }
+        }
+        thread::sleep(sleep_duration);
     }
 }
 
@@ -74,15 +95,19 @@ fn bytes_to_megabytes(bytes: u64) -> u64 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Starting memory monitor");
     let cli = Cli::parse();
 
     let process_name = cli.name;
     let max_memory: u64 = cli.max_memory as u64 * 1024 * 1024;
+    let interval = cli.interval;
+    let signal = cli.signal;
 
-    println!("Monitoring processes starting with {} that use more than {} MB of memory", process_name, max_memory / 1024 / 1024);
+    Logger::log("WARN", "Starting memory-monitor", serde_json::json!({
+        "process_name": process_name,
+        "max_memory_mb": bytes_to_megabytes(max_memory),
+        "interval": interval,
+        "signal": signal
+    }));
 
-    let _ = monitor_processes(&process_name, max_memory);
-
-    Ok(())
+    monitor_processes(&process_name, max_memory, interval, &signal)
 }
