@@ -66,9 +66,9 @@ fn signal_from_string(signal: &str) -> Option<i32> {
     }
 }
 
-fn monitor_processes(
-    proc_dir: &mut dyn ProcDir,
-    checker: &mut dyn MemoryChecker,
+fn monitor_processes<P: ProcDir, M: MemoryChecker>(
+    proc_dir: &mut P,
+    checker: &mut M,
     starting_with: &str,
     memory_threshold: u64,
     interval: u16,
