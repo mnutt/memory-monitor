@@ -34,7 +34,8 @@ use mac::{MemoryChecker, ProcDir};
 #[cfg(target_os = "linux")]
 use linux::{MemoryChecker, ProcDir};
 
-pub const PID_COUNT_MAX: usize = 100000;
+// How many matched pids we can store
+pub const PID_COUNT_MAX: usize = 5000;
 
 fn signal_from_string(signal: &str) -> Option<i32> {
     match signal {
