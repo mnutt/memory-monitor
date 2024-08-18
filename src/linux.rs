@@ -5,18 +5,19 @@ use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
+use super::{ProcDir, MemoryChecker};
 
 pub const PATH_MAX: usize = 4096;
 
-pub struct ProcDir {
+pub struct LinuxProcDir {
     dir: *mut libc::DIR,
     pidfile_buffer: Vec<u8>,
     procname_buffer: Vec<u8>,
 }
 
-impl ProcDir {
+impl ProcDir for LinuxProcDir {
     // Open /proc fd and initialize preallocated buffer for reads
-    pub fn open() -> Result<Self, io::Error> {
+    fn open() -> Result<Self, io::Error> {
         let dir = unsafe { libc::opendir(b"/proc\0".as_ptr() as *const i8) };
         if dir.is_null() {
             return Err(io::Error::new(
@@ -34,7 +35,7 @@ impl ProcDir {
         })
     }
 
-    pub fn find_processes(&mut self, pids: &mut Vec<i32>, starting_with: &str) -> io::Result<()> {
+    fn find_processes(&mut self, pids: &mut Vec<i32>, starting_with: &str) -> io::Result<()> {
         pids.clear();
 
         self.rewind();
@@ -64,13 +65,17 @@ impl ProcDir {
 
         Ok(())
     }
+}
 
-    pub fn rewind(&mut self) -> () {
-        unsafe { libc::rewinddir(self.dir) }
+impl LinuxProcDir {
+    fn rewind(&mut self) {
+        unsafe {
+            libc::rewinddir(self.dir);
+        }
     }
 }
 
-impl Iterator for ProcDir {
+impl Iterator for LinuxProcDir {
     type Item = i32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -98,7 +103,7 @@ impl Iterator for ProcDir {
     }
 }
 
-impl Drop for ProcDir {
+impl Drop for LinuxProcDir {
     fn drop(&mut self) {
         if !self.dir.is_null() {
             unsafe {
@@ -116,17 +121,17 @@ pub fn open_proc_file(pid: i32, filename: &'static str, buffer: &mut Vec<u8>) ->
     File::open(path)
 }
 
-pub struct MemoryChecker {
+pub struct LinuxMemoryChecker {
     buffer: Vec<u8>,
 }
 
-impl MemoryChecker {
-    pub fn new() -> Self {
+impl MemoryChecker for LinuxMemoryChecker {
+    fn new() -> Self {
         let buffer = Vec::with_capacity(PATH_MAX);
         Self { buffer }
     }
 
-    pub fn get_memory(&mut self, pid: i32) -> Result<u64, String> {
+    fn get_memory(&mut self, pid: i32) -> Result<u64, String> {
         // Open the statm file
         let mut file = open_proc_file(pid, "statm", &mut self.buffer).map_err(|e| e.to_string())?;
 
@@ -151,5 +156,40 @@ impl MemoryChecker {
         }
 
         Err("Failed to get process info".to_string())
+    }
+
+    fn kill(&self, pid: libc::pid_t, signal: i32) {
+        unsafe {
+            libc::kill(pid, signal);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linux_memory_checker() {
+        let mut checker = LinuxMemoryChecker::new();
+        let pid = unsafe { libc::getpid() };
+        let usage = checker.get_memory(pid).unwrap();
+        assert!(usage > 0);
+    }
+
+    #[test]
+    fn test_linux_proc_dir_no_matches() {
+        let mut proc_dir = LinuxProcDir::open().unwrap();
+        let mut pids = Vec::new();
+        proc_dir.find_processes(&mut pids, "shouldneverfindthisprocess").unwrap();
+        assert!(pids.is_empty());
+    }
+
+    #[test]
+    fn test_linux_proc_dir_with_matches() {
+        let mut proc_dir = LinuxProcDir::open().unwrap();
+        let mut pids = Vec::new();
+        proc_dir.find_processes(&mut pids, "cargo").unwrap();
+        assert!(!pids.is_empty());
     }
 }

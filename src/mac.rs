@@ -3,23 +3,24 @@ extern crate libc;
 use darwin_libproc;
 use libc::{proc_listallpids, proc_pidpath};
 use std::{ffi::CStr, io};
+use super::{ProcDir, MemoryChecker};
 
 pub const PID_COUNT_MAX: usize = super::PID_COUNT_MAX;
 
-pub struct ProcDir {
+pub struct MacProcDir {
     pid_buffer: [i32; PID_COUNT_MAX],
     path_buffer: [u8; libc::PATH_MAX as usize],
 }
 
-impl ProcDir {
-    pub fn open() -> Result<Self, String> {
+impl ProcDir for MacProcDir {
+    fn open() -> Result<Self, io::Error> {
         Ok(Self {
             pid_buffer: [0i32; PID_COUNT_MAX],
             path_buffer: [0u8; libc::PATH_MAX as usize],
         })
     }
 
-    pub fn find_processes(&mut self, pids: &mut Vec<i32>, starting_with: &str) -> io::Result<()> {
+    fn find_processes(&mut self, pids: &mut Vec<i32>, starting_with: &str) -> io::Result<()> {
         pids.clear();
 
         let buffer_size_used = unsafe {
@@ -70,14 +71,14 @@ impl ProcDir {
     }
 }
 
-pub struct MemoryChecker;
+pub struct MacMemoryChecker;
 
-impl MemoryChecker {
-    pub fn new() -> Self {
+impl MemoryChecker for MacMemoryChecker {
+    fn new() -> Self {
         Self {}
     }
 
-    pub fn get_memory(&mut self, pid: i32) -> Result<u64, String> {
+    fn get_memory(&mut self, pid: i32) -> Result<u64, String> {
         let proc_info = darwin_libproc::task_info(pid);
 
         if proc_info.is_err() {
@@ -86,5 +87,41 @@ impl MemoryChecker {
             let memory_usage = proc_info.unwrap().pti_resident_size as u64;
             Ok(memory_usage)
         }
+    }
+
+    fn kill(&self, pid: libc::pid_t, signal: i32) {
+        unsafe {
+            libc::kill(pid, signal);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mac_memory_checker() {
+        let mut checker = MacMemoryChecker::new();
+        let pid = unsafe { libc::getpid() };
+        let usage = checker.get_memory(pid).unwrap();
+        assert!(usage > 0);
+    }
+
+    #[test]
+    fn test_mac_proc_dir_no_matches() {
+        let mut proc_dir = MacProcDir::open().unwrap();
+        let mut pids = Vec::new();
+        proc_dir.find_processes(&mut pids, "shouldneverfindthisprocess").unwrap();
+        assert!(pids.is_empty());
+    }
+
+    #[test]
+    fn test_mac_proc_dir_with_matches() {
+        let mut proc_dir = MacProcDir::open().unwrap();
+        let mut pids = Vec::new();
+        proc_dir.find_processes(&mut pids, "cargo").unwrap(); // ourselves
+
+        assert!(!pids.is_empty());
     }
 }
