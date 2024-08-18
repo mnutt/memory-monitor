@@ -1,6 +1,6 @@
 use super::{MemoryChecker, ProcDir};
 use libc;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_char};
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -18,7 +18,7 @@ pub struct LinuxProcDir {
 impl ProcDir for LinuxProcDir {
     // Open /proc fd and initialize preallocated buffer for reads
     fn open() -> Result<Self, io::Error> {
-        let dir = unsafe { libc::opendir(b"/proc\0".as_ptr() as *const i8) };
+        let dir = unsafe { libc::opendir(b"/proc\0".as_ptr() as *const c_char) };
         if dir.is_null() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
