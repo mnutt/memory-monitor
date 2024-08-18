@@ -6,6 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  UBUNTU: ubuntu-20.04 # needs to link against old glibc
 
 jobs:
   test:
@@ -14,7 +15,7 @@ jobs:
       matrix:
         include:
           - TARGET: x86_64-unknown-linux-gnu
-            OS: ubuntu-latest
+            OS: ubuntu-20.04
           - TARGET: x86_64-apple-darwin
             OS: macos-latest
     runs-on: ${{ matrix.OS }}
@@ -42,17 +43,17 @@ jobs:
         # a list of all the targets
         include:
           - TARGET: x86_64-unknown-linux-gnu # tested in a debian container on a mac
-            OS: ubuntu-latest
+            OS: $UBUNTU
           - TARGET: x86_64-unknown-linux-musl # test in an alpine container on a mac
-            OS: ubuntu-latest
+            OS: $UBUNTU
           - TARGET: aarch64-unknown-linux-gnu # tested on aws t4g.nano
-            OS: ubuntu-latest
+            OS: $UBUNTU
           - TARGET: aarch64-unknown-linux-musl # tested on aws t4g.nano in alpine container
-            OS: ubuntu-latest
+            OS: $UBUNTU
           - TARGET: armv7-unknown-linux-gnueabihf # raspberry pi 2-3-4, not tested
-            OS: ubuntu-latest
+            OS: $UBUNTU
           - TARGET: armv7-unknown-linux-musleabihf # raspberry pi 2-3-4, not tested
-            OS: ubuntu-latest
+            OS: $UBUNTU
           - TARGET: x86_64-apple-darwin # tested on a mac, is not properly signed so there are security warnings
             OS: macos-latest
     needs: test
