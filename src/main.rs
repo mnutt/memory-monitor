@@ -1,9 +1,9 @@
 use clap::Parser;
+use mockall::automock;
 use std::error::Error;
+use std::io;
 use std::thread;
 use std::time::Duration;
-use std::io;
-use mockall::automock;
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -32,13 +32,17 @@ struct Cli {
 
 #[automock]
 trait ProcDir {
-    fn open() -> Result<Self, io::Error> where Self: Sized;
+    fn open() -> Result<Self, io::Error>
+    where
+        Self: Sized;
     fn find_processes(&mut self, pids: &mut Vec<i32>, starting_with: &str) -> io::Result<()>;
 }
 
 #[automock]
 trait MemoryChecker {
-    fn new() -> Self where Self: Sized;
+    fn new() -> Self
+    where
+        Self: Sized;
     fn get_memory(&mut self, pid: i32) -> Result<u64, String>;
     fn kill(&self, pid: libc::pid_t, signal: i32);
 }
@@ -62,7 +66,15 @@ fn signal_from_string(signal: &str) -> Option<i32> {
     }
 }
 
-fn monitor_processes(proc_dir: &mut dyn ProcDir, checker: &mut dyn MemoryChecker, starting_with: &str, memory_threshold: u64, interval: u16, signal: &str, single: bool) -> Result<(), Box<dyn Error>> {
+fn monitor_processes(
+    proc_dir: &mut dyn ProcDir,
+    checker: &mut dyn MemoryChecker,
+    starting_with: &str,
+    memory_threshold: u64,
+    interval: u16,
+    signal: &str,
+    single: bool,
+) -> Result<(), Box<dyn Error>> {
     let mut pids: Vec<i32> = Vec::with_capacity(PID_COUNT_MAX);
 
     let sleep_duration = Duration::from_secs(interval as u64);
@@ -129,7 +141,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut proc_dir = ProcDirImpl::open()?;
     let mut checker = MemoryCheckerImpl::new();
 
-    monitor_processes(&mut proc_dir, &mut checker, &process_name, max_memory, interval, &signal, false)
+    monitor_processes(
+        &mut proc_dir,
+        &mut checker,
+        &process_name,
+        max_memory,
+        interval,
+        &signal,
+        false,
+    )
 }
 
 #[cfg(test)]
@@ -151,7 +171,7 @@ mod tests {
     fn test_bytes_to_megabytes() {
         assert_eq!(bytes_to_megabytes(1048576), 1); // 1 MB
         assert_eq!(bytes_to_megabytes(2097152), 2); // 2 MB
-        assert_eq!(bytes_to_megabytes(0), 0);       // 0 MB
+        assert_eq!(bytes_to_megabytes(0), 0); // 0 MB
     }
 
     #[test]
@@ -209,7 +229,10 @@ mod tests {
             true,
         );
 
-        assert!(result.is_ok(), "Expected monitor_processes to handle no processes gracefully");
+        assert!(
+            result.is_ok(),
+            "Expected monitor_processes to handle no processes gracefully"
+        );
     }
 
     #[test]
@@ -232,9 +255,7 @@ mod tests {
             .with(eq(123))
             .returning(|_| Ok(2 * 1024 * 1024));
 
-        mock_memory_checker
-            .expect_kill()
-            .times(0);
+        mock_memory_checker.expect_kill().times(0);
 
         let result = monitor_processes(
             &mut mock_proc_dir,
@@ -246,7 +267,10 @@ mod tests {
             true,
         );
 
-        assert!(result.is_ok(), "Expected monitor_processes to handle no processes exceeding the threshold gracefully");
+        assert!(
+            result.is_ok(),
+            "Expected monitor_processes to handle no processes exceeding the threshold gracefully"
+        );
     }
 
     #[test]

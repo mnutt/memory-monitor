@@ -1,3 +1,4 @@
+use super::{MemoryChecker, ProcDir};
 use libc;
 use std::ffi::CStr;
 use std::fs::File;
@@ -5,7 +6,6 @@ use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
-use super::{ProcDir, MemoryChecker};
 
 pub const PATH_MAX: usize = 4096;
 
@@ -181,7 +181,9 @@ mod tests {
     fn test_linux_proc_dir_no_matches() {
         let mut proc_dir = LinuxProcDir::open().unwrap();
         let mut pids = Vec::new();
-        proc_dir.find_processes(&mut pids, "shouldneverfindthisprocess").unwrap();
+        proc_dir
+            .find_processes(&mut pids, "shouldneverfindthisprocess")
+            .unwrap();
         assert!(pids.is_empty());
     }
 

@@ -1,9 +1,9 @@
 extern crate libc;
 
+use super::{MemoryChecker, ProcDir};
 use darwin_libproc;
 use libc::{proc_listallpids, proc_pidpath};
 use std::{ffi::CStr, io};
-use super::{ProcDir, MemoryChecker};
 
 pub const PID_COUNT_MAX: usize = super::PID_COUNT_MAX;
 
@@ -112,7 +112,9 @@ mod tests {
     fn test_mac_proc_dir_no_matches() {
         let mut proc_dir = MacProcDir::open().unwrap();
         let mut pids = Vec::new();
-        proc_dir.find_processes(&mut pids, "shouldneverfindthisprocess").unwrap();
+        proc_dir
+            .find_processes(&mut pids, "shouldneverfindthisprocess")
+            .unwrap();
         assert!(pids.is_empty());
     }
 
