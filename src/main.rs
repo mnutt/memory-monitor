@@ -2,9 +2,6 @@ use clap::Parser;
 use std::error::Error;
 use std::thread;
 use std::time::Duration;
-use logging::Logger;
-
-mod logging;
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -58,32 +55,30 @@ fn monitor_processes(starting_with: &str, memory_threshold: u64, interval: u16, 
     let signal = signal_from_string(signal).unwrap_or(libc::SIGTERM);
 
     loop {
-        Logger::log("INFO", "Checking processes", serde_json::json!({
-            "starting_with": starting_with,
-        }));
+        println!("Checking for processes");
 
         if let Err(err) = proc_dir.find_processes(&mut pids, &starting_with) {
-            Logger::log("ERROR", "Error finding processes", serde_json::json!({
-                "error": err.to_string(),
-            }));
+            eprintln!("Error finding processes: {}", err);
         }
 
         for &pid in pids.iter().filter(|&&pid| pid > 0) {
+            println!("Checking memory usage for pid {}", pid);
             let usage = checker.get_memory(pid)?;
-            Logger::log("INFO", "Memory usage", serde_json::json!({
-                "pid": pid,
-                "usage_mb": bytes_to_megabytes(usage),
-                "threshold_mb": bytes_to_megabytes(memory_threshold),
-            }));
-
             if usage > memory_threshold {
-                Logger::log("WARN", "Memory usage exeeded threshold, killing", serde_json::json!({
-                    "pid": pid,
-                    "usage_mb": bytes_to_megabytes(usage),
-                    "threshold_mb": bytes_to_megabytes(memory_threshold),
-                    "signal": signal,
-                }));
+                println!(
+                    "  Memory usage for pid {} is {} MB, which is over the threshold of {} MB",
+                    pid,
+                    bytes_to_megabytes(usage),
+                    bytes_to_megabytes(memory_threshold)
+                );
                 unsafe { libc::kill(pid as libc::pid_t, signal) };
+            } else {
+                println!(
+                    "  Memory usage for pid {} is {} MB, which is under the threshold of {} MB",
+                    pid,
+                    bytes_to_megabytes(usage),
+                    bytes_to_megabytes(memory_threshold)
+                );
             }
         }
         thread::sleep(sleep_duration);
@@ -95,6 +90,7 @@ fn bytes_to_megabytes(bytes: u64) -> u64 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    println!("Starting memory monitor");
     let cli = Cli::parse();
 
     let process_name = cli.name;
@@ -102,12 +98,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let interval = cli.interval;
     let signal = cli.signal;
 
-    Logger::log("WARN", "Starting memory-monitor", serde_json::json!({
-        "process_name": process_name,
-        "max_memory_mb": bytes_to_megabytes(max_memory),
-        "interval": interval,
-        "signal": signal
-    }));
+    println!(
+        "Monitoring processes starting with {} that use more than {} MB of memory, polling every {} seconds, sending signal {}",
+        process_name,
+        bytes_to_megabytes(max_memory),
+        interval,
+        signal
+    );
 
     monitor_processes(&process_name, max_memory, interval, &signal)
 }
