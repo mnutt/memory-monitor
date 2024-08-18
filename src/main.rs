@@ -4,6 +4,8 @@ use std::error::Error;
 use std::io;
 use std::thread;
 use std::time::Duration;
+use log::{info, warn, error};
+use env_logger;
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -78,35 +80,36 @@ fn monitor_processes<P: ProcDir, M: MemoryChecker>(
     let mut pids: Vec<i32> = Vec::with_capacity(PID_COUNT_MAX);
 
     let sleep_duration = Duration::from_secs(interval as u64);
-    let signal = signal_from_string(signal).unwrap_or(libc::SIGTERM);
+    let signal_code = signal_from_string(signal).unwrap_or(libc::SIGTERM);
 
     loop {
-        println!("Checking for processes");
+        info!("Checking processes starting with {}", starting_with);
 
         if let Err(err) = proc_dir.find_processes(&mut pids, &starting_with) {
-            eprintln!("Error finding processes: {}", err);
+            error!("Error finding processes: {}", err);
         }
 
-        for &pid in pids.iter().filter(|&&pid| pid > 0) {
-            println!("Checking memory usage for pid {}", pid);
+        for &pid in pids.iter() {
+            info!("  Checking memory usage for pid {}", pid);
             let usage = checker.get_memory(pid)?;
+            info!(
+                "  Process pid: {} memory: {} MB",
+                pid,
+                bytes_to_megabytes(usage)
+            );
             if usage > memory_threshold {
-                println!(
-                    "  Memory usage for pid {} is {} MB, which is over the threshold of {} MB",
+                warn!(
+                    "  Killing pid {} with memory: {} MB, which is over the threshold of {} MB",
                     pid,
                     bytes_to_megabytes(usage),
                     bytes_to_megabytes(memory_threshold)
                 );
-                checker.kill(pid as libc::pid_t, signal);
-            } else {
-                println!(
-                    "  Memory usage for pid {} is {} MB, which is under the threshold of {} MB",
-                    pid,
-                    bytes_to_megabytes(usage),
-                    bytes_to_megabytes(memory_threshold)
-                );
+                checker.kill(pid as libc::pid_t, signal_code);
+                warn!("  Killed pid {} with signal {}", pid, signal);
             }
         }
+
+        info!("Checked {} processes", pids.len());
 
         if single {
             return Ok(());
@@ -121,7 +124,11 @@ fn bytes_to_megabytes(bytes: u64) -> u64 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Starting memory monitor");
+    env_logger::Builder::from_default_env()
+        .filter(None, log::LevelFilter::Info)
+        .init();
+    warn!("Starting memory monitor");
+
     let cli = Cli::parse();
 
     let process_name = cli.name;
@@ -129,7 +136,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let interval = cli.interval;
     let signal = cli.signal;
 
-    println!(
+    warn!(
         "Monitoring processes starting with {} that use more than {} MB of memory, polling every {} seconds, sending signal {}",
         process_name,
         bytes_to_megabytes(max_memory),

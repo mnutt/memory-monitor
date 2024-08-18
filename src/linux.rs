@@ -55,7 +55,6 @@ impl ProcDir for LinuxProcDir {
                     .next()
                     .unwrap_or(&[b' ']);
                 let procname = contents.split(|&c| c == b'\n').next().unwrap_or(&[b' ']);
-                //println!("pid {} procname: {:?}", pid, String::from_utf8(cleaned_name.to_vec()));
 
                 if procname.starts_with(starting_with.as_bytes()) {
                     pids.push(pid);
