@@ -9,7 +9,18 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - TARGET: x86_64-unknown-linux-gnu
+            OS: ubuntu-latest
+          - TARGET: x86_64-apple-darwin
+            OS: macos-latest
+    runs-on: ${{ matrix.OS }}
+    env:
+      TARGET: ${{ matrix.TARGET }}
+      OS: ${{ matrix.OS }}
     steps:
       - uses: actions/checkout@v2
       - name: Cargo cache
@@ -18,7 +29,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ./target
-          key: test-cargo-registry
+          key: test-cargo-registry-${{matrix.TARGET}}
       - name: List
         run: find ./
       - name: Run tests
