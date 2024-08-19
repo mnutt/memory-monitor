@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 use log::{info, warn, error};
 use env_logger;
+use env_logger::Env;
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -124,9 +125,7 @@ fn bytes_to_megabytes(bytes: u64) -> u64 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::Builder::from_default_env()
-        .filter(None, log::LevelFilter::Info)
-        .init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     warn!("Starting memory monitor");
 
     let cli = Cli::parse();
