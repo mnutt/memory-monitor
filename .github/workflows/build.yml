@@ -113,7 +113,7 @@ jobs:
           mv ./target/$TARGET/release/$NAME ./$NAME
           tar -czf ./artifacts/$NAME-$TARGET-$TAG.tar.gz $NAME
       - name: Archive artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: result
           path: |
